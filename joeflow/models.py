@@ -7,6 +7,7 @@ from functools import partial
 
 from django.contrib.contenttypes.fields import GenericForeignKey, GenericRelation
 from django.db import models, transaction
+from django.db.models import Prefetch
 from django.db.models.base import ModelBase
 from django.db.models.functions import Now
 from django.urls import NoReverseMatch, path, reverse
@@ -248,11 +249,15 @@ class Workflow(models.Model, metaclass=WorkflowBase):
 
         names = dict(self.get_nodes()).keys()
 
-        for task in self.task_set.filter(name__in=names):
+        child_task_prefetch = Prefetch(
+            'child_task_set',
+            queryset=Task.objects.exclude(name="override"),
+            to_attr='filtered_child_tasks'
+        )
+        for task in self.task_set.filter(name__in=names).prefetch_related('child_task_set', child_task_prefetch):
             href = task.get_absolute_url()
             style = "filled"
             peripheries = "1"
-
             if task.type == HUMAN:
                 style += ", rounded"
             if not task.completed:
@@ -267,7 +272,7 @@ class Workflow(models.Model, metaclass=WorkflowBase):
                 fontcolor="black",
                 peripheries=peripheries,
             )
-            for child in task.child_task_set.exclude(name="override"):
+            for child in task.filtered_child_tasks:
                 graph.edge(task.name, child.name, color="black")
 
         for task in self.task_set.filter(name="override").prefetch_related(
